@@ -5,8 +5,6 @@ An advanced, interactive world model and visualization dashboard leveraging **Ho
 ---
 
 <img width="1432" height="680" alt="image1" src="https://github.com/user-attachments/assets/a4805d7e-6a16-42eb-96ac-5b8f004f2f15" />
-<img width="1432" height="680" alt="1779508477472" src="https://github.com/user-attachments/assets/83ea0d72-df3a-43bd-a8e1-dfbe569fb941" />
-<img width="1432" height="680" alt="1779509321012" src="https://github.com/user-attachments/assets/86428ca7-3312-4b53-ae21-ef3f7b8d0b43" />
 
 ## Features
 
@@ -69,3 +67,6 @@ To trace queries and print step-by-step state trajectory coordinate values direc
 ```bash
 python3 cli.py
 ```
+
+<img width="1432" height="680" alt="1779508477472" src="https://github.com/user-attachments/assets/83ea0d72-df3a-43bd-a8e1-dfbe569fb941" />
+<img width="1432" height="680" alt="1779509321012" src="https://github.com/user-attachments/assets/86428ca7-3312-4b53-ae21-ef3f7b8d0b43" />
