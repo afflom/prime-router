@@ -1,2 +1,0 @@
-# prime-router
-general intelligence
