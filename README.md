@@ -1,3 +1,5 @@
+<img width="640" height="304" alt="1779509321012" src="https://github.com/user-attachments/assets/86428ca7-3312-4b53-ae21-ef3f7b8d0b43" />
+
 # R4 Prime Router — Evolving Hypersphere Brain World Model
 
 An advanced, interactive world model and visualization dashboard leveraging **Hopf $S^3$ geometry** and **GCD prime-seeded coordinates** for zero-weight geometric sequence generation, stateful context drift tracking, and semantic projection mapping.
