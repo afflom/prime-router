@@ -12,6 +12,7 @@ import random
 import time
 import threading
 import urllib.request
+from itertools import chain
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 # 1. Automatic dependency bootstrap check before numpy import
 try:
@@ -743,10 +744,7 @@ def find_most_resonant_sentence(query_text: str, query_state: np.ndarray, identi
     all_windows = set(CORPUS_INDEX.keys()) | set(scoped_index.keys())
 
     for win_idx in all_windows:
-        merged_items = []
-        merged_items.extend(CORPUS_INDEX.get(win_idx, []))
-        merged_items.extend(scoped_index.get(win_idx, []))
-        for item in merged_items:
+        for item in chain(CORPUS_INDEX.get(win_idx, []), scoped_index.get(win_idx, [])):
             shared_count = 0
             s_prod = item.get("prime_product") or get_sentence_prime_product(item.get("words") or [w.lower().strip(".,?!()\"';:-") for w in item["sentence"].split() if w.strip()])
             for p in query_primes:
@@ -1288,14 +1286,15 @@ def retrieve_geometric_resonance(prompt_text, routing_data, top_n=3, state_vecto
     all_windows = set(CORPUS_INDEX.keys()) | set(scoped_index.keys())
 
     for win_idx in all_windows:
-        merged_items = []
-        for item in CORPUS_INDEX.get(win_idx, []):
-            merged_items.append((item, 0.0))
-        for item in scoped_index.get(win_idx, []):
-            merged_items.append((item, 15.0))
-
-        if not merged_items:
+        shared_items = CORPUS_INDEX.get(win_idx, [])
+        scoped_items = scoped_index.get(win_idx, [])
+        if not shared_items and not scoped_items:
             continue
+
+        merged_items = chain(
+            ((item, 0.0) for item in shared_items),
+            ((item, 15.0) for item in scoped_items),
+        )
 
         win = PRECOMPUTED_WINDOWS[win_idx - 1]
         s_idx = win["s_idx"]
@@ -1461,13 +1460,15 @@ def _serialize_corpus_index(index_store: dict) -> dict:
         for item in items:
             state_vector = item["state_vector"]
             state_np = state_vector if isinstance(state_vector, np.ndarray) else np.array(state_vector)
+            sent_words = item.get("words") or [w.lower().strip(".,?!()\"';:-") for w in item["sentence"].split() if w.strip()]
+            prime_product = int(item["prime_product"]) if "prime_product" in item else get_sentence_prime_product(sent_words)
             serializable_items.append({
                 "sentence": item["sentence"],
                 "state_vector": state_np.tolist(),
                 "kappa": float(item["kappa"]),
                 "deficit_angle": float(item["deficit_angle"]),
-                "prime_product": int(item["prime_product"]) if "prime_product" in item else get_sentence_prime_product(item.get("words") or [w.lower().strip(".,?!()\"';:-") for w in item["sentence"].split() if w.strip()]),
-                "words": item.get("words") or [w.lower().strip(".,?!()\"';:-") for w in item["sentence"].split() if w.strip()],
+                "prime_product": prime_product,
+                "words": sent_words,
                 "u": float(item["u"]) if "u" in item else get_sentence_projection(state_np, int(idx))[0],
                 "v": float(item["v"]) if "v" in item else get_sentence_projection(state_np, int(idx))[1],
                 "v_4d": item.get("v_4d") or get_state_4d_projection(state_np)
@@ -2277,6 +2278,15 @@ class RouterAPIHandler(BaseHTTPRequestHandler):
         # Silence normal server console spam for asset queries
         pass
 
+    def _read_json_body(self):
+        content_length = int(self.headers.get('Content-Length', '0'))
+        if content_length <= 0:
+            return {}
+        raw = self.rfile.read(content_length)
+        if not raw:
+            return {}
+        return json.loads(raw.decode('utf-8'))
+
     def do_GET(self):
         if self.path == "/" or self.path == "/index.html":
             _record_request("/")
@@ -2464,11 +2474,9 @@ class RouterAPIHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/api/chat":
             _record_request("/api/chat")
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
             
             try:
-                payload = json.loads(post_data.decode('utf-8'))
+                payload = self._read_json_body()
                 text = payload.get("text", "").strip()
                 identity = str(payload.get("identity", "")).strip()
                 if not identity:
@@ -2629,15 +2637,19 @@ class RouterAPIHandler(BaseHTTPRequestHandler):
         elif self.path == "/api/reset":
             _record_request("/api/reset")
             try:
-                identity = None
                 try:
-                    content_length = int(self.headers.get('Content-Length', '0'))
-                    if content_length > 0:
-                        post_data = self.rfile.read(content_length)
-                        payload = json.loads(post_data.decode('utf-8'))
-                        identity = payload.get("identity")
-                except Exception:
+                    payload = self._read_json_body()
+                    identity = payload.get("identity")
+                except (json.JSONDecodeError, ValueError):
                     identity = None
+
+                if identity is None:
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": "identity is required"}).encode('utf-8'))
+                    return
 
                 reset_brain_state(identity=identity)
                 self.send_response(200)
@@ -2651,11 +2663,8 @@ class RouterAPIHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
         elif self.path == "/api/corpus":
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            
             try:
-                payload = json.loads(post_data.decode('utf-8'))
+                payload = self._read_json_body()
                 corpus = payload.get("corpus", "").strip()
                 
                 count = index_corpus(corpus)
@@ -2672,10 +2681,8 @@ class RouterAPIHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
         elif self.path == "/api/uor/verify":
             _record_request("/api/uor/verify")
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
             try:
-                payload = json.loads(post_data.decode('utf-8'))
+                payload = self._read_json_body()
                 supplied_address = str(payload.get("address", "")).strip()
                 canonical_payload = payload.get("payload", {})
                 requested_hash = payload.get("hash_algorithm")
@@ -2709,10 +2716,8 @@ class RouterAPIHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
         elif self.path == "/api/uor/attest":
             _record_request("/api/uor/attest")
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
             try:
-                payload = json.loads(post_data.decode('utf-8'))
+                payload = self._read_json_body()
                 canonical_payload = payload.get("payload", {})
                 requested_hash = payload.get("hash_algorithm", "sha256")
                 include_multihash = bool(payload.get("include_multihash", True))
